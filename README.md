@@ -1,5 +1,10 @@
 # pantheon-tool-sanitizer
 
+[![tests](https://github.com/Igfray/pantheon-tool-sanitizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Igfray/pantheon-tool-sanitizer/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/pantheon-tool-sanitizer.svg)](https://pypi.org/project/pantheon-tool-sanitizer/)
+[![Python](https://img.shields.io/pypi/pyversions/pantheon-tool-sanitizer.svg)](https://pypi.org/project/pantheon-tool-sanitizer/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 **Neutralise prompt-injection / tool-poisoning in untrusted tool text before it reaches an LLM's system prompt.** Zero dependencies, ~40 lines.
 
 > The problem: when your agent consumes tools from an external source — an [MCP](https://modelcontextprotocol.io) server, a plugin registry, a third-party API — that source's tool **name and description are attacker-controlled**, and they get rendered into the *trusted* instruction channel (the planner's system prompt). A hostile server can weaponise that.
