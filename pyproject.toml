@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pantheon-tool-sanitizer"
+version = "0.1.0"
+description = "Neutralise prompt-injection / tool-poisoning in untrusted MCP/LLM tool text before it reaches the system prompt."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Isaac Teague Frayling" }]
+keywords = ["llm", "mcp", "prompt-injection", "tool-poisoning", "agent-security", "sanitization"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Igfray/pantheon-tool-sanitizer"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["tool_sanitizer.py"]
+
+[tool.hatch.build.targets.sdist]
+include = ["tool_sanitizer.py", "test_tool_sanitizer.py", "README.md", "LICENSE", "NOTICE"]
