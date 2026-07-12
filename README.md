@@ -1,9 +1,9 @@
 # pantheon-tool-sanitizer
 
 [![tests](https://github.com/Igfray/pantheon-tool-sanitizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Igfray/pantheon-tool-sanitizer/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/pantheon-tool-sanitizer.svg)](https://pypi.org/project/pantheon-tool-sanitizer/)
-[![Python](https://img.shields.io/pypi/pyversions/pantheon-tool-sanitizer.svg)](https://pypi.org/project/pantheon-tool-sanitizer/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/pantheon-tool-sanitizer)](https://pypi.org/project/pantheon-tool-sanitizer/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/pantheon-tool-sanitizer/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **Neutralise prompt-injection / tool-poisoning in untrusted tool text before it reaches an LLM's system prompt.** Zero dependencies, ~40 lines.
 
