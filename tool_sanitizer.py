@@ -41,9 +41,17 @@ _INVISIBLE_RE = re.compile("[\x00-\x1f\x7f​-‏‪-‮⁦-⁩﻿]")
 
 def strip_tool_markup(text: str) -> str:
     """Strip any tool-protocol residue mixed into text — function-call XML and a `{"action": ...}` object — so
-    it can't be mistaken for a real tool invocation. Useful on model OUTPUT too (so a user never sees markup)."""
-    text = re.sub(r'<\s*/?\s*(?:function_calls?|invoke|parameter|antml)\b[^>]*>', '', text, flags=re.I)
-    text = re.sub(r'\{\s*"action"\s*:.*?\}', '', text, flags=re.S)
+    it can't be mistaken for a real tool invocation. Useful on model OUTPUT too (so a user never sees markup).
+
+    Iterated to a fixpoint: a single removal pass is bypassable, because deleting an *inner* match can rejoin
+    the surrounding fragments into a fresh one (`<in<invoke>voke>` -> `<invoke>`; `{"act{"action":..}ion":..}`
+    -> `{"action":..}`). We re-run until a pass changes nothing — guaranteed to terminate, since every pass
+    only ever removes characters (length strictly decreases until stable)."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r'<\s*/?\s*(?:function_calls?|invoke|parameter|antml)\b[^>]*>', '', text, flags=re.I)
+        text = re.sub(r'\{\s*"action"\s*:.*?\}', '', text, flags=re.S)
     return text.strip()
 
 
@@ -57,4 +65,4 @@ def sanitize_remote_tool_text(text: str, *, max_len: int = 300) -> str:
     text = _INVISIBLE_RE.sub("", str(text))
     text = strip_tool_markup(text)
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_len]
+    return text[:max_len].strip()          # strip AFTER the cut too — truncation can land on a space

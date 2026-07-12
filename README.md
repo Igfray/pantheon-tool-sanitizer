@@ -53,6 +53,14 @@ This closes the **covert** metadata vectors: fake tool-call markup, invisible / 
 
 So treat this as *necessary, not sufficient*. Pair it with the controls a string sanitiser can't provide: capability gating, human approval on consequential actions, treating tool descriptions **and** tool *output* as untrusted data in the planner, and not letting an untrusted server's description drive irreversible actions. This library closes the covert half cleanly; the semantic half is an architecture problem, not a string problem.
 
+## Changelog
+
+- **0.1.2** — hardening, found by a new seeded property/fuzz test (`test_property_invariants_hold_over_fuzzed_inputs`) that asserts the invariants over the whole input space, not a handful of examples:
+  - **Markup stripping is now iterated to a fixpoint.** A single removal pass was bypassable: deleting an *inner* match could rejoin the surrounding fragments into a fresh one (`<in<invoke>voke>` → a live `<invoke>`; the same for `{"action":…}` objects). It now re-runs until stable.
+  - **Output is stripped after truncation**, so capping at `max_len` can no longer leave a trailing space (which also makes the function idempotent — a second pass is a no-op).
+- **0.1.1** — honest-scope README (names the semantic-injection limit explicitly).
+- **0.1.0** — initial release.
+
 ## License
 
 Apache-2.0. See `LICENSE`.
