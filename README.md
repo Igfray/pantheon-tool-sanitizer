@@ -5,9 +5,11 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/pantheon-tool-sanitizer/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-**Neutralise prompt-injection / tool-poisoning in untrusted tool text before it reaches an LLM's system prompt.** Zero dependencies, ~40 lines.
+**Strip tool-protocol markup and Unicode smuggling from untrusted tool text before it reaches an LLM.** Zero dependencies, ~40 lines.
 
 > The problem: when your agent consumes tools from an external source — an [MCP](https://modelcontextprotocol.io) server, a plugin registry, a third-party API — that source's tool **name and description are attacker-controlled**, and they get rendered into the *trusted* instruction channel (the planner's system prompt). A hostile server can weaponise that.
+
+⚠️ **This is a covert-channel control, not a prompt-injection defence.** It removes *hidden* attacks (fake tool-call markup, invisible/bidi/Tags-block smuggling) — a plain-English malicious instruction is legible text and passes through unchanged. See [Scope](#scope--and-an-honest-limit) before relying on it. The name says exactly what it does.
 
 Extracted from [PANTHEON](https://pantheonlabs.co.uk), where it guards the inbound MCP transport — the point where a governed agent consumes an external, possibly-hostile server's tools.
 
@@ -55,6 +57,7 @@ So treat this as *necessary, not sufficient*. Pair it with the controls a string
 
 ## Changelog
 
+- **0.1.3** — **broadened the invisible-char class** to the modern smuggling vectors that were slipping through: the Unicode **Tags block** (U+E0000–E007F, the current ASCII-smuggler), word joiner (U+2060), soft hyphen, Arabic letter mark, Hangul fillers, C1 controls, and annotation anchors. **Retitled** the guarantee to what it is — *strip tool-protocol markup + Unicode smuggling* — not "neutralise prompt-injection" (a plain-prose instruction is legible text and is out of scope by design; the covert channels are what this closes).
 - **0.1.2** — hardening, found by a new seeded property/fuzz test (`test_property_invariants_hold_over_fuzzed_inputs`) that asserts the invariants over the whole input space, not a handful of examples:
   - **Markup stripping is now iterated to a fixpoint.** A single removal pass was bypassable: deleting an *inner* match could rejoin the surrounding fragments into a fresh one (`<in<invoke>voke>` → a live `<invoke>`; the same for `{"action":…}` objects). It now re-runs until stable.
   - **Output is stripped after truncation**, so capping at `max_len` can no longer leave a trailing space (which also makes the function idempotent — a second pass is a no-op).

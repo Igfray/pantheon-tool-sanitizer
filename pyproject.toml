@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pantheon-tool-sanitizer"
-version = "0.1.2"
-description = "Neutralise prompt-injection / tool-poisoning in untrusted MCP/LLM tool text before it reaches the system prompt."
+version = "0.1.3"
+description = "Strip tool-protocol markup + Unicode smuggling (invisible/bidi/Tags-block) from untrusted MCP/LLM tool text. Covert-channel control, not a semantic-injection defence."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
