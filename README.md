@@ -43,6 +43,37 @@ if not safe_name:          # a name that sanitises to nothing (pure markup/invis
 
 Run it on **every** untrusted tool name and description before they touch the prompt. `strip_tool_markup` is also exported for cleaning model *output* (so a user never sees raw markup).
 
+## Integrating it (what a caller must handle)
+
+Since v0.2.0 an oversized input **raises** rather than returning partially sanitised text — a
+caller cannot tell a genuinely short safe description from the surviving head of a hostile one, so
+a partial result would weaken the guarantee. Two helpers exist so that decision is not forced on
+every call site:
+
+```python
+from tool_sanitizer import sanitize_or_none, sanitize_batch, ToolTextTooLarge
+
+# One tool: "no safe text" and "too much text" are the SAME decision -- skip it.
+safe = sanitize_or_none(spec["name"], max_len=64)
+if not safe:
+    continue                     # empty, all-markup, and oversized all land here
+
+# A whole discovery response, under ONE budget.
+try:
+    descriptions = sanitize_batch(d["description"] for d in server_tools)
+except ToolTextTooLarge:
+    refuse_server()              # the response as a whole is not worth processing
+```
+
+`ToolTextTooLarge` subclasses `ValueError`, so code written against the v0.2.0 behaviour keeps
+working unchanged.
+
+**Why `sanitize_batch` exists.** The per-call cap bounds one description; it cannot see that a
+server sent 256 of them, each just under the limit. The processing is quadratic within the cap —
+one worst-case accepted input measures ~0.14 s, but fifty of them measured **5.7 s** with the
+aggregate budget removed. `sanitize_batch` checks the total *before* doing any work, so the cost of
+a hostile tool list is bounded by `max_total_chars` (default 256 KiB) rather than by list length.
+
 ## Install
 
 ```bash
@@ -56,6 +87,13 @@ This closes the **covert** metadata vectors: fake tool-call markup, invisible / 
 So treat this as *necessary, not sufficient*. Pair it with the controls a string sanitiser can't provide: capability gating, human approval on consequential actions, treating tool descriptions **and** tool *output* as untrusted data in the planner, and not letting an untrusted server's description drive irreversible actions. This library closes the covert half cleanly; the semantic half is an architecture problem, not a string problem.
 
 ## Changelog
+
+**0.3.0** — `ToolTextTooLarge` (a `ValueError` subclass) replaces the bare `ValueError`;
+`sanitize_or_none()` folds "too large" into the existing skip-this-tool branch; `sanitize_batch()`
+bounds a whole discovery response under one budget. Follow-up to an external review that noted the
+cap bounds a single input while the algorithm stays quadratic within it, and that callers now have
+a new exception to handle.
+
 
 - **0.1.3** — **broadened the invisible-char class** to the modern smuggling vectors that were slipping through: the Unicode **Tags block** (U+E0000–E007F, the current ASCII-smuggler), word joiner (U+2060), soft hyphen, Arabic letter mark, Hangul fillers, C1 controls, and annotation anchors. **Retitled** the guarantee to what it is — *strip tool-protocol markup + Unicode smuggling* — not "neutralise prompt-injection" (a plain-prose instruction is legible text and is out of scope by design; the covert channels are what this closes).
 - **0.1.2** — hardening, found by a new seeded property/fuzz test (`test_property_invariants_hold_over_fuzzed_inputs`) that asserts the invariants over the whole input space, not a handful of examples:

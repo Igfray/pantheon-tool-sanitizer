@@ -83,6 +83,18 @@ def strip_tool_markup(text: str) -> str:
 #: [external review 2026-09-07, finding 3]
 MAX_INPUT_CHARS = 16_384
 
+# The aggregate budget one discovery response may spend. A per-call cap cannot see a BATCH: a
+# hostile server can serve many descriptions that are each individually legal. [review follow-up 2]
+MAX_TOTAL_CHARS = 262_144
+
+
+class ToolTextTooLarge(ValueError):
+    """Input exceeded the size the sanitiser will process.
+
+    Subclasses ValueError so callers written against the v0.2.0 behaviour keep working, while a
+    caller that wants to tell "too big" from "malformed" can catch this specifically.
+    """
+
 
 def sanitize_remote_tool_text(text: str, *, max_len: int = 300,
                               max_input: int = MAX_INPUT_CHARS) -> str:
@@ -97,7 +109,7 @@ def sanitize_remote_tool_text(text: str, *, max_len: int = 300,
     # description from the surviving head of a hostile one, so a partial result would weaken the
     # guarantee this function exists to provide. Raising makes the decision the caller's.
     if len(text) > max_input:
-        raise ValueError(
+        raise ToolTextTooLarge(
             f"tool text is {len(text)} chars, over the {max_input} limit; "
             "refusing rather than returning partially sanitised text")
     text = _WHITESPACE_CTRL_RE.sub(" ", text)
@@ -105,3 +117,41 @@ def sanitize_remote_tool_text(text: str, *, max_len: int = 300,
     text = strip_tool_markup(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len].strip()          # strip AFTER the cut too — truncation can land on a space
+
+
+def sanitize_or_none(text: str, *, max_len: int = 300,
+                     max_input: int = MAX_INPUT_CHARS) -> str | None:
+    """`sanitize_remote_tool_text` that returns None instead of raising on oversized input.
+
+    For the common caller shape — "if there is no safe text, skip this tool" — an oversized
+    description and a description that sanitises to nothing are the SAME decision. This collapses
+    them into one branch so a caller needs one rule, not two:
+
+        safe = sanitize_or_none(spec["name"], max_len=64)
+        if not safe:
+            continue                      # covers empty, all-markup, and oversized alike
+    """
+    try:
+        return sanitize_remote_tool_text(text, max_len=max_len, max_input=max_input)
+    except ToolTextTooLarge:
+        return None
+
+
+def sanitize_batch(texts, *, max_len: int = 300, max_input: int = MAX_INPUT_CHARS,
+                   max_total_chars: int = MAX_TOTAL_CHARS) -> list[str]:
+    """Sanitise a whole discovery response under ONE aggregate budget.
+
+    The per-call cap bounds a single description; it cannot see that a server sent 256 of them,
+    each just under the limit. This checks the total BEFORE doing any work, so the cost of a
+    hostile tool list is bounded by `max_total_chars` rather than by list length.
+
+    Raises ToolTextTooLarge naming the total — the whole response is refused, because a partially
+    mounted tool list is exactly the ambiguity the refusal-over-truncation rule exists to avoid.
+    """
+    items = [str(t or "") for t in texts]
+    total = sum(len(t) for t in items)
+    if total > max_total_chars:
+        raise ToolTextTooLarge(
+            f"tool text totals {total} chars across {len(items)} items, over the "
+            f"{max_total_chars} total limit; refusing the whole response")
+    return [sanitize_remote_tool_text(t, max_len=max_len, max_input=max_input) for t in items]
