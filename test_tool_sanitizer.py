@@ -123,3 +123,78 @@ def test_property_invariants_hold_over_fuzzed_inputs():
         assert not _TAG_RE.search(out) and not _ACTION_RE.search(out), f"markup survived: {out!r}"
         # 6. idempotent — the output is a fixpoint, so a second pass can't change (or re-expose) anything
         assert sanitize_remote_tool_text(out, max_len=max_len) == out
+
+
+# ── external review follow-up, 2026-09-07 ─────────────────────────────────────────────────────────
+# Four findings from an independent source review, each reproduced locally before fixing.
+# These tests are written against the DOCUMENTED contract, not against the implementation's own
+# regexes — the reviewer's point that "sanitizer invariants reuse the implementation's patterns"
+# was fair, and reusing them is how a shared wrong assumption survives its own test suite.
+
+import time
+
+import pytest
+
+from tool_sanitizer import sanitize_remote_tool_text
+
+
+class TestWordBoundariesSurvive:
+    """Finding 4: control-character stripping ran BEFORE whitespace collapse, so \\n and \\t were
+    deleted outright rather than becoming spaces. 'Read\\nthe\\tfile' -> 'Readthefile' silently
+    changed the meaning of ordinary text, and a description is prose a human may later read."""
+
+    def test_newline_and_tab_become_spaces_not_nothing(self):
+        assert sanitize_remote_tool_text("Read\nthe\tfile") == "Read the file"
+
+    @pytest.mark.parametrize("sep", ["\n", "\t", "\r", "\r\n", "\n\n", "\x0b", "\x0c"])
+    def test_every_whitespace_control_preserves_the_boundary(self, sep):
+        assert sanitize_remote_tool_text(f"alpha{sep}beta") == "alpha beta"
+
+    def test_dangerous_controls_are_still_removed_entirely(self):
+        # NUL/BEL/ESC are not word boundaries — they must vanish, not become spaces
+        assert sanitize_remote_tool_text("al\x00pha") == "alpha"
+        assert sanitize_remote_tool_text("al\x07pha") == "alpha"
+        assert sanitize_remote_tool_text("al\x1bpha") == "alpha"
+
+    def test_invisible_smuggling_characters_still_vanish(self):
+        # the covert-channel guarantee must not regress while fixing whitespace
+        assert sanitize_remote_tool_text("a\u200bb") == "ab"          # zero-width space
+        assert sanitize_remote_tool_text("a\u202eb") == "ab"          # RTL override
+        assert sanitize_remote_tool_text("a\U000e0041b") == "ab"      # Tags block
+
+
+class TestProcessingCostIsBounded:
+    """Finding 3: the fixpoint loop rescans the whole remaining input each pass, and truncation
+    happened only afterwards, so cost was quadratic in INPUT length while only OUTPUT was capped.
+    Measured on the published version: 256 kB of `'<in'*n + '<invoke>' + 'voke>'*n` took 26s."""
+
+    @staticmethod
+    def _pathological(n: int) -> str:
+        return "<in" * n + "<invoke>" + "voke>" * n
+
+    def test_a_large_hostile_input_is_refused_not_ground_through(self):
+        with pytest.raises(ValueError):
+            sanitize_remote_tool_text(self._pathological(32_000))
+
+    def test_the_refusal_is_immediate(self):
+        payload = self._pathological(32_000)
+        t0 = time.perf_counter()
+        with pytest.raises(ValueError):
+            sanitize_remote_tool_text(payload)
+        assert time.perf_counter() - t0 < 0.10, "rejection must not do the expensive work first"
+
+    def test_oversized_input_is_refused_rather_than_silently_truncated(self):
+        """Returning partially sanitised text would weaken the guarantee: the caller cannot tell
+        a safe short description from a truncated hostile one."""
+        with pytest.raises(ValueError):
+            sanitize_remote_tool_text("x" * 200_000)
+
+    def test_ordinary_long_text_still_works(self):
+        # a real description near the limit must not be refused
+        out = sanitize_remote_tool_text("word " * 1_000)
+        assert out and len(out) <= 300
+
+    def test_the_limit_is_caller_visible_and_adjustable(self):
+        with pytest.raises(ValueError):
+            sanitize_remote_tool_text("x" * 500, max_input=100)
+        assert sanitize_remote_tool_text("x" * 50, max_input=100)

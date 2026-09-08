@@ -39,8 +39,14 @@ TOOL_MARK_RE = re.compile(r'\{\s*"|\[\s*\{|<\s*/?\s*(?:function_calls?|invoke|pa
 
 # Control + format + invisible + reordering codepoints that hide or reorder text so human review and the model
 # disagree. Deliberately broad — a security control should over-strip formatting chars, never under-strip:
+# Whitespace controls are word BOUNDARIES, not smuggling characters: deleting them outright turns
+# "Read\nthe\tfile" into "Readthefile", silently changing prose a human may later read. They are
+# replaced with a space first, then collapsed by the \s+ pass. Every OTHER control still vanishes.
+# [external review 2026-09-07, finding 4]
+_WHITESPACE_CTRL_RE = re.compile("[\t\n\v\f\r\x85\u2028\u2029]")
+
 _INVISIBLE_RE = re.compile(
-    "[\x00-\x1f\x7f-\x9f"          # C0 controls + DEL + C1 controls
+    "[\x00-\x08\x0e-\x1f\x7f-\x9f"   # C0 controls + DEL + C1, MINUS \t\n\v\f\r (handled above)
     "­"                       # soft hyphen
     "؜"                       # Arabic letter mark (bidi control)
     "ᅟᅠㅤﾠ"     # Hangul fillers (render blank, used to smuggle text)
@@ -70,14 +76,32 @@ def strip_tool_markup(text: str) -> str:
     return text.strip()
 
 
-def sanitize_remote_tool_text(text: str, *, max_len: int = 300) -> str:
+#: Refuse input larger than this before any regex runs. The fixpoint loop rescans the remaining
+#: string on every pass, so cost is quadratic in INPUT length while max_len only caps OUTPUT --
+#: 256 kB of `'<in'*n + '<invoke>' + 'voke>'*n` measured 26s of CPU on the published version.
+#: A real tool description is a few hundred characters; 16 kB is ~50x the legitimate ceiling.
+#: [external review 2026-09-07, finding 3]
+MAX_INPUT_CHARS = 16_384
+
+
+def sanitize_remote_tool_text(text: str, *, max_len: int = 300,
+                              max_input: int = MAX_INPUT_CHARS) -> str:
     """Neutralise an untrusted tool's name/description before it reaches an LLM system prompt. Strips
     invisible/bidi/control characters, removes tool-protocol markup (so it can't fake a tool call), collapses
     all whitespace to single spaces (no multi-line instruction smuggling), and caps length. Returns inert prose
     — or the empty string if nothing safe remains (a signal the tool should be skipped)."""
     if not text:
         return ""
-    text = _INVISIBLE_RE.sub("", str(text))
+    text = str(text)
+    # Refuse, never truncate-then-sanitise: a caller cannot distinguish a genuinely short safe
+    # description from the surviving head of a hostile one, so a partial result would weaken the
+    # guarantee this function exists to provide. Raising makes the decision the caller's.
+    if len(text) > max_input:
+        raise ValueError(
+            f"tool text is {len(text)} chars, over the {max_input} limit; "
+            "refusing rather than returning partially sanitised text")
+    text = _WHITESPACE_CTRL_RE.sub(" ", text)
+    text = _INVISIBLE_RE.sub("", text)
     text = strip_tool_markup(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len].strip()          # strip AFTER the cut too — truncation can land on a space
